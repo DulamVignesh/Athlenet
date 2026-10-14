@@ -151,7 +151,8 @@ html{background:#f5f7fb}body{margin:0;min-width:320px}*{box-sizing:border-box}bu
 .landing-card-footer svg{color:var(--landing-lime)}
 .landing-footer{min-height:80px;padding:14px max(calc((100% - 1240px)/2),40px);display:flex;align-items:center;justify-content:space-between;gap:22px;border-top:1px solid rgba(20,36,31,.1)}
 .landing-footer .landing-brand{font-size:16px}
-.landing-footer .landing-brand img{width:34px;height:34px}
+.landing-footer .landing-brand .landing-brand-mark{width:34px;height:34px}
+.landing-footer .landing-brand .landing-brand-wordmark{width:115px;height:auto;max-height:34px;object-fit:contain;border-radius:0}
 .landing-footer>span{color:#87928c;font-size:11px}
 .landing-footer>div{display:flex;align-items:center;gap:22px}
 .landing-footer>div a:last-child{display:flex;align-items:center;gap:4px;color:var(--landing-ink)}
