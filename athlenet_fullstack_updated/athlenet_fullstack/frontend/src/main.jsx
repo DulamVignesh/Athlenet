@@ -143,7 +143,7 @@ function PublicHome() {
         <div className="landing-bottom-card" data-reveal="right"><div className="landing-card-top"><span className="landing-card-tag"><Sparkles size={14}/> THE ATHLENET WAY</span><span className="landing-card-mark">A.</span></div><div className="landing-card-lines"><span>PLAY WITH PURPOSE.</span><span>CONNECT WITH PEOPLE.</span><span className="landing-card-highlight">GROW WITHOUT LIMITS.</span></div><div className="landing-card-footer"><span>ATHLENET COMMUNITY</span><Globe2 size={18}/></div></div>
       </section>
     </main>
-    <footer className="landing-footer"><Link to="/" className="landing-brand"><img src="/athlenet-logo.jpeg" alt=""/><span>ATHLE<span>NET</span></span></Link><span>Play. Connect. Grow.</span><div><Link to="/login">Log in</Link><Link to="/register">Create account <ArrowUpRight size={14}/></Link></div></footer>
+    <footer className="landing-footer"><Link to="/" className="landing-brand" aria-label="Athlenet home"><img className="landing-brand-mark" src="/athlenet-nav-mark.png" alt=""/><img className="landing-brand-wordmark" src="/athlenet-nav-wordmark.png" alt="Athlenet"/></Link><span>Play. Connect. Grow.</span><div><Link to="/login">Log in</Link><Link to="/register">Create account <ArrowUpRight size={14}/></Link></div></footer>
   </div>;
 }
 
