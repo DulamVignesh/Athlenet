@@ -20,6 +20,7 @@ class Profile(models.Model):
     location = models.CharField(max_length=120, blank=True)
     pincode = models.CharField(max_length=6, blank=True, validators=[RegexValidator(regex=r'^[1-9][0-9]{5}$', message='Enter a valid 6-digit Indian PIN code.')])
     bio = models.TextField(blank=True)
+    interests = models.CharField(max_length=200, blank=True)
     photo = models.ImageField(upload_to='profiles/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     def __str__(self): return f'{self.user.username} ({self.role})'
@@ -80,6 +81,7 @@ class Post(models.Model):
     content = models.TextField()
     image = models.ImageField(upload_to='posts/', blank=True, null=True)
     post_type = models.CharField(max_length=30, default='discussion', choices=[('achievement','Achievement'),('camp','Training Camp'),('trial','Trial'),('recruitment','Recruitment'),('discussion','Discussion'),('awareness','Awareness')])
+    sport = models.CharField(max_length=50, blank=True, choices=SPORTS)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
