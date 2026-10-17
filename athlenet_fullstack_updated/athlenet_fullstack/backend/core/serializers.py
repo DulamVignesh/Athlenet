@@ -11,7 +11,7 @@ class UserMiniSerializer(serializers.ModelSerializer):
         try: return obj.profile.photo.url if obj.profile.photo else None
         except: return None
     class Meta:
-        model=User; fields=['id','username','name','role','photo']
+        model=User; fields=['id','username','name','first_name','last_name','role','photo']
 
 class MemberSerializer(serializers.ModelSerializer):
     user = UserMiniSerializer(read_only=True)
@@ -40,13 +40,14 @@ class ProfileSerializer(serializers.ModelSerializer):
     player_details = serializers.SerializerMethodField()
     pincode = serializers.SerializerMethodField()
     followers_count = serializers.SerializerMethodField(); following_count = serializers.SerializerMethodField()
+    is_following = serializers.SerializerMethodField()
     def get_pincode(self,obj):
         req=self.context.get('request')
         return obj.pincode if req and req.user.is_authenticated and req.user.pk==obj.user_id else ''
     def get_coach_details(self,obj):
         try:
             d=obj.coach_details
-            return {'age':d.age,'gender':d.gender,'sport':d.sport,'experience':d.experience,'academy':d.academy,'verified':d.verified}
+            return {'age':d.age,'gender':d.gender,'sport':d.sport,'experience':d.experience,'academy':d.academy,'government_recognition':d.government_recognition,'verified':d.verified}
         except: return None
     def get_player_details(self,obj):
         try:
@@ -55,10 +56,13 @@ class ProfileSerializer(serializers.ModelSerializer):
         except: return None
     def get_followers_count(self,obj): return obj.user.followers.count()
     def get_following_count(self,obj): return obj.user.following.count()
+    def get_is_following(self,obj):
+        req=self.context.get('request')
+        return bool(req and req.user.is_authenticated and obj.user.followers.filter(follower=req.user).exists())
     def get_email(self,obj):
         req=self.context.get('request')
         return obj.user.email if req and req.user.is_authenticated and req.user.pk==obj.user_id else ''
-    class Meta: model=Profile; fields=['user','role','email','phone','location','pincode','bio','photo','coach_details','player_details','followers_count','following_count']
+    class Meta: model=Profile; fields=['user','role','email','phone','location','pincode','bio','interests','photo','coach_details','player_details','followers_count','following_count','is_following']
 
 class OpportunitySerializer(serializers.ModelSerializer):
     coach_name=serializers.SerializerMethodField(); coach_verified=serializers.SerializerMethodField(); application_count=serializers.IntegerField(source='applications.count',read_only=True)

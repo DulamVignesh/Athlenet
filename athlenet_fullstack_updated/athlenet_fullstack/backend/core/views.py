@@ -94,11 +94,8 @@ class RegisterView(APIView):
 class LoginView(APIView):
     permission_classes=[AllowAny]
     def post(self,request):
-        identity=request.data.get('username') or request.data.get('email'); password=request.data.get('password')
-        user=authenticate(username=identity,password=password)
-        if not user:
-            try: user=User.objects.get(email=identity); user=authenticate(username=user.username,password=password)
-            except User.DoesNotExist: user=None
+        username=request.data.get('username'); password=request.data.get('password')
+        user=authenticate(username=username,password=password)
         if not user: return Response({'detail':'Invalid credentials.'},401)
         return Response(token_response(user))
 
@@ -106,6 +103,11 @@ class MeView(APIView):
     def get(self,request): return Response(ProfileSerializer(request.user.profile,context={'request':request}).data)
     def patch(self,request):
         p=request.user.profile
+        user=request.user
+        if 'username' in request.data and request.data['username'] != user.username:
+            return Response({'username':['Username cannot be changed.']},400)
+        if 'role' in request.data and request.data['role'] != p.role:
+            return Response({'role':['Account role cannot be changed.']},400)
         email=str(request.data.get('email',request.user.email)).strip()
         if 'email' in request.data:
             try: validate_email(email)
@@ -124,18 +126,54 @@ class MeView(APIView):
                 return Response({'pincode':exc.messages},400)
             p.pincode=pincode
         if 'interests' in request.data: p.interests=clean_interests(request.data['interests'])
-        for f in ['location','bio']:
-            if f in request.data: setattr(p,f,request.data[f])
+        try:
+            for field in ['location','bio','interests']:
+                if field in request.data:
+                    value=p.interests if field=='interests' else request.data[field]
+                    setattr(p,field,Profile._meta.get_field(field).clean(value,p))
+            for field in ['first_name','last_name']:
+                if field in request.data:
+                    setattr(user,field,User._meta.get_field(field).clean(request.data[field],user))
+        except ValidationError as exc:
+            return Response({'detail':exc.messages},400)
         if 'phone' in request.data:
             p.phone=phone
             p.phone_key=phone_key or None
         if 'email' in request.data:
-            request.user.email=email
+            user.email=email
         if request.FILES.get('photo'): p.photo=request.FILES['photo']
+        details = None
+        detail_fields = []
+        if p.role == 'player':
+            try: details=p.player_details
+            except PlayerProfile.DoesNotExist: pass
+            detail_fields = ['age','sport','experience','level','district','state','ranking','statistics']
+        elif p.role == 'coach':
+            try: details=p.coach_details
+            except CoachProfile.DoesNotExist: pass
+            detail_fields = ['age','gender','sport','experience','academy','government_recognition']
+        if details:
+            try:
+                for field in detail_fields:
+                    if field not in request.data:
+                        continue
+                    value=request.data[field]
+                    if field=='age' and value=='':
+                        value=None
+                    elif field=='experience' and value=='':
+                        value=0
+                    setattr(details,field,details._meta.get_field(field).clean(value,details))
+            except ValidationError as exc:
+                return Response({'detail':exc.messages},400)
+            if p.role == 'coach' and request.FILES.get('certificate'):
+                details.certificate=request.FILES['certificate']
         try:
             with transaction.atomic():
                 p.save()
-                if 'email' in request.data: request.user.save(update_fields=['email'])
+                if details:
+                    details.save()
+                if any(field in request.data for field in ['email','first_name','last_name']):
+                    user.save()
         except IntegrityError:
             return Response({'detail':'An account with this mobile number already exists.'},400)
         return Response(ProfileSerializer(p,context={'request':request}).data)
@@ -302,6 +340,11 @@ class MembersView(APIView):
 class ConnectionsView(APIView):
     def get(self,request):
         qs=Profile.objects.filter(user__followers__follower=request.user).select_related('user','player_details','coach_details').distinct().order_by('user__username')
+        return Response(MemberSerializer(qs,many=True,context={'request':request}).data)
+
+class FollowersView(APIView):
+    def get(self,request):
+        qs=Profile.objects.filter(user__following__following=request.user).select_related('user','player_details','coach_details').distinct().order_by('user__username')
         return Response(MemberSerializer(qs,many=True,context={'request':request}).data)
 
 class NewsView(APIView):
