@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { API } from './api';
 import './index.css';
+import CommunityFeed from './components/CommunityFeed';
 
 const AuthContext = createContext(null);
 const useAuth = () => useContext(AuthContext);
@@ -299,11 +300,7 @@ function HomePage() {
             <Link to="/create" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-orange-50 hover:text-orange-700"><BriefcaseBusiness size={16} className="text-blue-600"/>Post an update</Link>
           </div>
         </div>
-        <div className="flex items-center justify-between px-1">
-          <div><h2 className="text-lg font-black text-slate-900">Community feed</h2><p className="mt-0.5 text-xs text-slate-500">The latest from across your sports network</p></div>
-          <Link to="/create" className="text-xs font-bold text-orange-600 hover:underline">Create post</Link>
-        </div>
-        {posts.length ? <div className="space-y-4">{posts.map(p=><PostCard key={p.id} p={p} onRefresh={load}/>)}</div> : <Empty title="Your feed starts here" text="Share a milestone, training update or sports discussion to get the conversation going." action="Create your first post" to="/create"/>}
+        <CommunityFeed />      
       </section>
       <aside className="space-y-5">
         <section className="card p-5">

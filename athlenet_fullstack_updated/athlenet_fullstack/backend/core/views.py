@@ -3,7 +3,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from django.db.models import Q
+from django.db.models import Q, Count
+from django.utils import timezone
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -28,6 +29,28 @@ def notify(user,msg,link=''):
 def token_response(user):
     refresh=RefreshToken.for_user(user)
     return {'access':str(refresh.access_token),'refresh':str(refresh),'user':UserMiniSerializer(user).data}
+
+SPORT_VALUES = {s for s, _ in SPORTS}
+ROLE_RANK = {'coach': 1, 'player': 2, 'user': 3}
+W_INTEREST, W_CONNECTION, W_PIN_EXACT, W_PIN_REGION, W_RECENCY = 3.0, 3.0, 3.0, 2.0, 3.0
+HALF_LIFE_HOURS = 24
+CANDIDATE_WINDOW = 400
+
+def clean_interests(value):
+    items = [s.strip() for s in str(value or '').split(',')]
+    return ','.join(dict.fromkeys(s for s in items if s in SPORT_VALUES))
+
+def own_sports(user):
+    profile = getattr(user, 'profile', None)
+    if not profile:
+        return []
+    sports = []
+    for rel in ('player_details', 'coach_details'):
+        d = getattr(profile, rel, None)
+        if d and d.sport:
+            sports.append(d.sport)
+    sports += [s for s in (profile.interests or '').split(',') if s]
+    return list(dict.fromkeys(sports))
 
 class RegisterView(APIView):
     permission_classes=[AllowAny]
@@ -55,7 +78,7 @@ class RegisterView(APIView):
         user.save(update_fields=['email'])
         try:
             with transaction.atomic():
-                p=Profile.objects.create(user=user,role=role,phone=phone,phone_key=phone_key or None,location=d.get('location',''),pincode=pincode,bio=d.get('bio',''))
+                p=Profile.objects.create(user=user,role=role,phone=phone,phone_key=phone_key or None,location=d.get('location',''),pincode=pincode,bio=d.get('bio',''),interests=clean_interests(d.get('interests','')))
         except IntegrityError:
             user.delete()
             return Response({'detail':'An account with this mobile number already exists.'},400)
@@ -100,6 +123,7 @@ class MeView(APIView):
             except ValidationError as exc:
                 return Response({'pincode':exc.messages},400)
             p.pincode=pincode
+        if 'interests' in request.data: p.interests=clean_interests(request.data['interests'])
         for f in ['location','bio']:
             if f in request.data: setattr(p,f,request.data[f])
         if 'phone' in request.data:
@@ -165,8 +189,74 @@ class PostListCreateView(APIView):
         return Response(PostSerializer(posts,many=True,context={'request':request}).data)
     def post(self,request):
         s=PostSerializer(data=request.data)
-        if s.is_valid(): obj=s.save(author=request.user); return Response(PostSerializer(obj,context={'request':request}).data,201)
+        if s.is_valid():
+            sport=request.data.get('sport') or (own_sports(request.user) or [''])[0]
+            obj=s.save(author=request.user, sport=sport if sport in SPORT_VALUES else '')
+            return Response(PostSerializer(obj,context={'request':request}).data,201)
         return Response(s.errors,400)
+
+class FeedView(APIView):
+    def get(self, request):
+        user = request.user
+        profile = getattr(user, 'profile', None)
+        try: page = max(int(request.query_params.get('page', 1)), 1)
+        except ValueError: page = 1
+        try: limit = min(max(int(request.query_params.get('limit', 20)), 1), 50)
+        except ValueError: limit = 20
+        source = request.query_params.get('source', 'all')
+
+        sports = own_sports(user)
+        pin = (profile.pincode if profile else '') or ''
+        prefix = pin[:3] if len(pin) == 6 else ''
+        following = set(Follow.objects.filter(follower=user).values_list('following_id', flat=True))
+
+        q = Q()
+        if source in ('all', 'interest') and sports:
+            q |= Q(sport__in=sports)
+        if source in ('all', 'nearby') and prefix:
+            q |= Q(author__profile__pincode__startswith=prefix)
+        if source in ('all', 'connections') and following:
+            q |= Q(author_id__in=following)
+
+        base = Post.objects.select_related('author__profile').annotate(conn=Count('author__followers', distinct=True))
+        posts = list(base.filter(q).order_by('-created_at')[:CANDIDATE_WINDOW]) if q else []
+        fallback = False
+        if not posts and source == 'all':
+            posts = list(base.order_by('-created_at')[:CANDIDATE_WINDOW])
+            fallback = True
+
+        sports_lower = {s.lower() for s in sports}
+        now = timezone.now()
+        rows = []
+        for p in posts:
+            reasons, score = [], 0.0
+            if p.sport and p.sport.lower() in sports_lower:
+                reasons.append('interest'); score += W_INTEREST
+            if p.author_id in following:
+                reasons.append('connection'); score += W_CONNECTION
+            ap = getattr(p.author, 'profile', None)
+            apin = (ap.pincode if ap else '') or ''
+            if pin and apin == pin:
+                reasons.append('nearby'); score += W_PIN_EXACT
+            elif prefix and apin.startswith(prefix):
+                reasons.append('nearby'); score += W_PIN_REGION
+            age_h = (now - p.created_at).total_seconds() / 3600
+            score += W_RECENCY * 0.5 ** (age_h / HALF_LIFE_HOURS)
+            rank = ROLE_RANK.get(ap.role if ap else 'user', 3)
+            key = (-round(score, 1), -p.conn, rank, -p.created_at.timestamp())
+            rows.append({'post': p, 'reasons': reasons, 'score': score, 'key': key})
+        rows.sort(key=lambda r: r['key'])
+
+        start = (page - 1) * limit
+        page_rows = rows[start:start + limit]
+        data = PostSerializer([r['post'] for r in page_rows], many=True, context={'request': request}).data
+        results = []
+        for item, r in zip(data, page_rows):
+            item = dict(item)
+            item['reasons'] = r['reasons']
+            item['feed_score'] = round(r['score'], 2)
+            results.append(item)
+        return Response({'results': results, 'page': page, 'has_next': len(rows) > start + limit, 'fallback': fallback})
 
 class LikeView(APIView):
     def post(self,request,pk):
